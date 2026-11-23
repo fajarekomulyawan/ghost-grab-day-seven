@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ghost Grab — built from one prompt</title>
+<style>
+  body { margin:0; background:#14101c; display:flex; flex-direction:column; align-items:center;
+         font-family:system-ui, sans-serif; color:#f5f0fa; }
+  h1 { margin:18px 0 4px; font-size:28px; }
+  p  { margin:0 0 12px; color:#b9a8d9; }
+  canvas { background:#1d1430; border:3px solid #c2188b; border-radius:12px; }
+</style>
+</head>
+<body>
+<h1>👻 Ghost Grab</h1>
+<p>Arrow keys or WASD to move. Grab the star coins, dodge the red blocks. 60 seconds.</p>
+<canvas id="game" width="800" height="500"></canvas>
+<p id="hud">Score: 0 · Hearts: ♥♥♥ · Time: 60</p>
+<script>
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+const hud = document.getElementById('hud');
+const W = cv.width, H = cv.height;
+const keys = {};
+addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
+
+const ghost = { x: W/2, y: H/2, r: 22, speed: 4.2 };
+let coins = [], blocks = [], score = 0, hearts = 3, timeLeft = 60, last = performance.now();
+
+function spawnCoin() {
+  coins.push({ x: 30 + Math.random()*(W-60), y: 30 + Math.random()*(H-60), r: 13 });
+}
+function spawnBlock() {
+  blocks.push({ x: Math.random()*(W-40), y: -30, w: 34, h: 34, vy: 2 + Math.random()*2.2 });
+}
+for (let i = 0; i < 5; i++) spawnCoin();
+
+function drawGhost(x, y, r) {
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(x, y - r*0.2, r, Math.PI, 0);
+  ctx.lineTo(x + r, y + r);
+  for (let i = 0; i < 3; i++) {
+    ctx.lineTo(x + r - (i*2+1)*(r*2/6), y + r*0.7);
+    ctx.lineTo(x + r - (i*2+2)*(r*2/6), y + r);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#14101c';
+  ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.25, r*0.13, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.25, r*0.13, 0, 7); ctx.fill();
+}
+function drawCoin(c) {
+  ctx.fillStyle = '#ffcf3f';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI/2 + i * Math.PI/5, rad = i % 2 ? c.r*0.45 : c.r;
+    ctx[i ? 'lineTo' : 'moveTo'](c.x + Math.cos(a)*rad, c.y + Math.sin(a)*rad);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+function step(now) {
+  const dt = Math.min(0.05, (now - last)/1000); last = now;
+  if (timeLeft > 0 && hearts > 0) {
+    timeLeft -= dt;
+    if (keys['arrowleft']  || keys['a']) ghost.x -= ghost.speed;
+    if (keys['arrowright'] || keys['d']) ghost.x += ghost.speed;
+    if (keys['arrowup']    || keys['w']) ghost.y -= ghost.speed;
+    if (keys['arrowdown']  || keys['s']) ghost.y += ghost.speed;
+    ghost.x = Math.max(ghost.r, Math.min(W - ghost.r, ghost.x));
+    ghost.y = Math.max(ghost.r, Math.min(H - ghost.r, ghost.y));
+    if (Math.random() < 0.02) spawnBlock();
+    blocks.forEach(b => b.y += b.vy);
+    blocks = blocks.filter(b => b.y < H + 40);
+    for (const b of blocks) {
+      if (Math.abs(b.x + b.w/2 - ghost.x) < ghost.r + b.w/2 - 6 &&
+          Math.abs(b.y + b.h/2 - ghost.y) < ghost.r + b.h/2 - 6) {
+        hearts--; b.y = H + 100;
+        if (hearts <= 0) break;
+      }
+    }
+    coins = coins.filter(c => {
+      const hit = Math.hypot(c.x - ghost.x, c.y - ghost.y) < ghost.r + c.r;
+      if (hit) { score += 10; spawnCoin(); }
+      return !hit;
+    });
+  }
+  ctx.clearRect(0, 0, W, H);
+  coins.forEach(drawCoin);
+  ctx.fillStyle = '#e5484d';
+  blocks.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+  drawGhost(ghost.x, ghost.y, ghost.r);
+  hud.textContent = `Score: ${score} · Hearts: ${'♥'.repeat(Math.max(0, hearts))} · Time: ${Math.max(0, Math.ceil(timeLeft))}`;
+  if (timeLeft <= 0 || hearts <= 0) {
+    ctx.fillStyle = 'rgba(20,16,28,0.78)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 44px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(hearts <= 0 ? 'Caught! Game over' : "Time! Game over", W/2, H/2 - 10);
+    ctx.font = '28px system-ui';
+    ctx.fillText(`Final score: ${score}`, W/2, H/2 + 36);
+    return;
+  }
+  requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

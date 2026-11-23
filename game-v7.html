@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ghost Grab — Day Seven build</title>
+<style>
+  body { margin: 0; background: #14101d; color: #f2ead8; font-family: system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; padding: 16px; }
+  canvas { background: #1d1830; border: 2px solid #4a3f75; border-radius: 8px; }
+  #hud { font-size: 20px; margin: 10px 0; letter-spacing: .04em; }
+  button { font-size: 16px; padding: 6px 18px; }
+</style>
+</head>
+<body>
+<h1>👻 Ghost Grab — Day Seven</h1>
+<div id="hud">SCORE 0 · COMBO x1 · TIME 60</div>
+<canvas id="game" width="960" height="540"></canvas>
+<p>Move with the mouse or arrow keys. Gold stars are worth 5. Grab the ring for a
+coin magnet, the bubble for a shield. Red blocks end the run — unless the shield is up.</p>
+<button id="restart">Restart</button>
+<script>
+"use strict";
+// Day seven of daily updates to Ghost Grab (the day-one build is game.html
+// in this repo). What a week of updates added, all visible in play:
+//   gold stars worth 5, a coin magnet, a shield bubble, combo scoring,
+//   particle bursts, score popups, a ghost trail, six faster blocks
+//   and one very large block.
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const hud = document.getElementById('hud');
+const W = cv.width, H = cv.height;
+
+let ghost, coins, golds, blocks, parts, pops, magnet, shield, score, combo,
+    best, timeLeft, over, keys, frame;
+
+function star(x, y, r, fill) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * 0.45 : r;
+    ctx[i ? 'lineTo' : 'moveTo'](x + rad * Math.cos(a), y + rad * Math.sin(a));
+  }
+  ctx.closePath(); ctx.fill();
+}
+function burst(x, y, n, color) {
+  for (let i = 0; i < n; i++)
+    parts.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6,
+                 life: 22, color });
+}
+function reset() {
+  ghost = { x: 90, y: H / 2, r: 22, trail: [] };
+  coins = []; golds = []; blocks = []; parts = []; pops = [];
+  for (let i = 0; i < 10; i++) coins.push({ x: 160 + Math.random() * 740, y: 50 + Math.random() * 440 });
+  for (let i = 0; i < 3; i++) golds.push({ x: 200 + Math.random() * 700, y: 60 + Math.random() * 420 });
+  for (let i = 0; i < 6; i++)
+    blocks.push({ x: 300 + Math.random() * 620, y: Math.random() * (H - 44),
+                  s: 34, v: 1.6 + Math.random() * 1.8, dir: Math.random() < .5 ? 1 : -1 });
+  blocks.push({ x: 700, y: 200, s: 84, v: 0.9, dir: 1 }); // the big one
+  magnet = { x: 480, y: 120, t: 0 }; shield = { x: 480, y: 420, t: 0 };
+  score = 0; combo = 1; best = 0; timeLeft = 60; over = false; frame = 0;
+}
+cv.addEventListener('mousemove', e => {
+  const r = cv.getBoundingClientRect();
+  ghost.x = e.clientX - r.left; ghost.y = e.clientY - r.top;
+});
+addEventListener('keydown', e => keys[e.key] = true);
+addEventListener('keyup', e => keys[e.key] = false);
+keys = {};
+document.getElementById('restart').addEventListener('click', reset);
+
+function step() {
+  frame++;
+  if (keys.ArrowLeft) ghost.x -= 6; if (keys.ArrowRight) ghost.x += 6;
+  if (keys.ArrowUp) ghost.y -= 6; if (keys.ArrowDown) ghost.y += 6;
+  ghost.x = Math.max(ghost.r, Math.min(W - ghost.r, ghost.x));
+  ghost.y = Math.max(ghost.r, Math.min(H - ghost.r, ghost.y));
+  ghost.trail.push({ x: ghost.x, y: ghost.y });
+  if (ghost.trail.length > 12) ghost.trail.shift();
+
+  const pull = magnet.t > 0;
+  const grab = (c, pts, color) => {
+    if (pull) { c.x += (ghost.x - c.x) * .12; c.y += (ghost.y - c.y) * .12; }
+    const dx = c.x - ghost.x, dy = c.y - ghost.y;
+    if (dx * dx + dy * dy < (ghost.r + 14) ** 2) {
+      score += pts * combo; best = Math.max(best, combo); combo = Math.min(9, combo + 1);
+      pops.push({ x: c.x, y: c.y, txt: '+' + pts * (combo - 1), life: 30 });
+      burst(c.x, c.y, 10, color);
+      c.x = 60 + Math.random() * 840; c.y = 40 + Math.random() * 460;
+    }
+  };
+  coins.forEach(c => grab(c, 1, '#ffd94a'));
+  golds.forEach(c => grab(c, 5, '#ffb300'));
+  if (magnet.t > 0) magnet.t--;
+  else if (Math.hypot(magnet.x - ghost.x, magnet.y - ghost.y) < ghost.r + 14) {
+    magnet.t = 300; magnet.x = -99; burst(ghost.x, ghost.y, 14, '#7ae0ff');
+    setTimeout(() => { magnet.x = 480; magnet.y = 120; }, 9000);
+  }
+  if (shield.t > 0) shield.t--;
+  else if (shield.x > 0 && Math.hypot(shield.x - ghost.x, shield.y - ghost.y) < ghost.r + 14) {
+    shield.t = 400; shield.x = -99; burst(ghost.x, ghost.y, 14, '#b49aff');
+    setTimeout(() => { shield.x = 480; shield.y = 420; }, 11000);
+  }
+  for (const b of blocks) {
+    b.y += b.v * b.dir;
+    if (b.y < 0 || b.y > H - b.s) b.dir *= -1;
+    if (ghost.x + ghost.r > b.x && ghost.x - ghost.r < b.x + b.s &&
+        ghost.y + ghost.r > b.y && ghost.y - ghost.r < b.y + b.s) {
+      if (shield.t > 0) { shield.t = 0; b.dir *= -1; b.y += 30 * b.dir; burst(ghost.x, ghost.y, 18, '#ff5d5d'); }
+      else over = true;
+    }
+  }
+  parts = parts.filter(p => p.life-- > 0);
+  pops = pops.filter(p => p.life-- > 0);
+  if (frame % 60 === 0 && timeLeft > 0) timeLeft--;
+  if (timeLeft === 0) over = true;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ghost.trail.forEach((t, i) => {
+    ctx.fillStyle = `rgba(242,234,216,${i / 40})`;
+    ctx.beginPath(); ctx.arc(t.x, t.y, ghost.r * i / 14, 0, 7); ctx.fill();
+  });
+  ctx.font = '34px serif'; ctx.fillText('👻', ghost.x - 17, ghost.y + 12);
+  if (magnet.t > 0) { ctx.strokeStyle = '#7ae0ff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ghost.x, ghost.y, 130, 0, 7); ctx.stroke(); }
+  if (shield.t > 0) { ctx.strokeStyle = '#b49aff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ghost.x, ghost.y, ghost.r + 9, 0, 7); ctx.stroke(); }
+  coins.forEach(c => star(c.x, c.y, 13, '#ffd94a'));
+  golds.forEach(c => star(c.x, c.y, 16, '#ffb300'));
+  if (magnet.x > 0) { ctx.strokeStyle = '#7ae0ff'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(magnet.x, magnet.y, 13, 0, 7); ctx.stroke(); }
+  if (shield.x > 0) { ctx.strokeStyle = '#b49aff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(shield.x, shield.y, 15, 0, 7); ctx.stroke(); }
+  ctx.fillStyle = '#e5484d';
+  blocks.forEach(b => ctx.fillRect(b.x, b.y, b.s, b.s));
+  parts.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x += p.vx, p.y += p.vy, 5, 5); });
+  ctx.fillStyle = '#f2ead8'; ctx.font = 'bold 20px system-ui';
+  pops.forEach(p => ctx.fillText(p.txt, p.x, p.y -= 1));
+  hud.textContent = over
+    ? `TIME! Final score ${score} · best combo x${best} — Restart to play again`
+    : `SCORE ${score} · COMBO x${combo} · TIME ${timeLeft}` +
+      (magnet.t > 0 ? ' · MAGNET' : '') + (shield.t > 0 ? ' · SHIELD' : '');
+}
+
+reset();
+(function loop() { if (!over) step(); draw(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>
